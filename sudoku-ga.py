@@ -1,501 +1,393 @@
-""" Solves a Sudoku puzzle using a genetic algorithm. This is based on a piece of coursework produced by Christian Thomas Jacobs as part of the CS3M6 Evolutionary Computation module at the University of Reading.
-
-Copyright (c) 2009, 2017 Christian Thomas Jacobs
+#!/usr/bin/env python3
 """
-
-import numpy
-import random
-random.seed()
-
-Nd = 9  # Number of digits (in the case of standard Sudoku puzzles, this is 9).
-
-
-class Population(object):
-    """ A set of candidate solutions to the Sudoku puzzle. These candidates are also known as the chromosomes in the population. """
-
-    def __init__(self):
-        self.candidates = []
-        return
-
-    def seed(self, Nc, given):
-        self.candidates = []
-        
-        # Determine the legal values that each square can take.
-        helper = Candidate()
-        helper.values = [[[] for j in range(0, Nd)] for i in range(0, Nd)]
-        for row in range(0, Nd):
-            for column in range(0, Nd):
-                for value in range(1, 10):
-                    if((given.values[row][column] == 0) and not (given.is_column_duplicate(column, value) or given.is_block_duplicate(row, column, value) or given.is_row_duplicate(row, value))):
-                        # Value is available.
-                        helper.values[row][column].append(value)
-                    elif(given.values[row][column] != 0):
-                        # Given/known value from file.
-                        helper.values[row][column].append(given.values[row][column])
-                        break
-
-        # Seed a new population.       
-        for p in range(0, Nc):
-            g = Candidate()
-            for i in range(0, Nd): # New row in candidate.
-                row = numpy.zeros(Nd)
-                
-                # Fill in the givens.
-                for j in range(0, Nd): # New column j value in row i.
-                
-                    # If value is already given, don't change it.
-                    if(given.values[i][j] != 0):
-                        row[j] = given.values[i][j]
-                    # Fill in the gaps using the helper board.
-                    elif(given.values[i][j] == 0):
-                        row[j] = helper.values[i][j][random.randint(0, len(helper.values[i][j])-1)]
-
-                # If we don't have a valid board, then try again. There must be no duplicates in the row.
-                while(len(list(set(row))) != Nd):
-                    for j in range(0, Nd):
-                        if(given.values[i][j] == 0):
-                            row[j] = helper.values[i][j][random.randint(0, len(helper.values[i][j])-1)]
-
-                g.values[i] = row
-
-            self.candidates.append(g)
-        
-        # Compute the fitness of all candidates in the population.
-        self.update_fitness()
-        
-        print("Seeding complete.")
-        
-        return
-        
-    def update_fitness(self):
-        """ Update fitness of every candidate/chromosome. """
-        for candidate in self.candidates:
-            candidate.update_fitness()
-        return
-        
-    def sort(self):
-        """ Sort the population based on fitness. """
-        self.candidates.sort(self.sort_fitness)
-        return
-
-    def sort_fitness(self, x, y):
-        """ The sorting function. """
-        if(x.fitness < y.fitness):
-            return 1
-        elif(x.fitness == y.fitness):
-            return 0
-        else:
-            return -1
+sudoku_genetic_python - Solve Sudoku with Python and genetic algorithm
+Version : 1.0.0
+Author : Hamidreza Mahdavipanah
+Repository: http://github.com/mahdavipanah/sudoku_genetic_python
+License : MIT License
+"""
+from math import sqrt
+from random import shuffle, randint
+import argparse
 
 
-class Candidate(object):
-    """ A candidate solutions to the Sudoku puzzle. """
-    def __init__(self):
-        self.values = numpy.zeros((Nd, Nd), dtype=int)
-        self.fitness = None
-        return
-
-    def update_fitness(self):
-        """ The fitness of a candidate solution is determined by how close it is to being the actual solution to the puzzle. The actual solution (i.e. the 'fittest') is defined as a 9x9 grid of numbers in the range [1, 9] where each row, column and 3x3 block contains the numbers [1, 9] without any duplicates (see e.g. http://www.sudoku.com/); if there are any duplicates then the fitness will be lower. """
-        
-        row_count = numpy.zeros(Nd)
-        column_count = numpy.zeros(Nd)
-        block_count = numpy.zeros(Nd)
-        row_sum = 0
-        column_sum = 0
-        block_sum = 0
-
-        for i in range(0, Nd):  # For each row...
-            for j in range(0, Nd):  # For each number within it...
-                row_count[self.values[i][j]-1] += 1  # ...Update list with occurrence of a particular number.
-
-            row_sum += (1.0/len(set(row_count)))/Nd
-            row_count = numpy.zeros(Nd)
-
-        for i in range(0, Nd):  # For each column...
-            for j in range(0, Nd):  # For each number within it...
-                column_count[self.values[j][i]-1] += 1  # ...Update list with occurrence of a particular number.
-
-            column_sum += (1.0 / len(set(column_count)))/Nd
-            column_count = numpy.zeros(Nd)
+# TODO: Logs
 
 
-        # For each block...
-        for i in range(0, Nd, 3):
-            for j in range(0, Nd, 3):
-                block_count[self.values[i][j]-1] += 1
-                block_count[self.values[i][j+1]-1] += 1
-                block_count[self.values[i][j+2]-1] += 1
-                
-                block_count[self.values[i+1][j]-1] += 1
-                block_count[self.values[i+1][j+1]-1] += 1
-                block_count[self.values[i+1][j+2]-1] += 1
-                
-                block_count[self.values[i+2][j]-1] += 1
-                block_count[self.values[i+2][j+1]-1] += 1
-                block_count[self.values[i+2][j+2]-1] += 1
+def same_column_indexes(problem_grid, i, j, N, itself=True):
+    """
+    A generator function that yields indexes of the elements that are in the same column as the input indexes.
 
-                block_sum += (1.0/len(set(block_count)))/Nd
-                block_count = numpy.zeros(Nd)
-
-        # Calculate overall fitness.
-        if (int(row_sum) == 1 and int(column_sum) == 1 and int(block_sum) == 1):
-            fitness = 1.0
-        else:
-            fitness = column_sum * block_sum
-        
-        self.fitness = fitness
-        return
-        
-    def mutate(self, mutation_rate, given):
-        """ Mutate a candidate by picking a row, and then picking two values within that row to swap. """
-
-        r = random.uniform(0, 1.1)
-        while(r > 1): # Outside [0, 1] boundary - choose another
-            r = random.uniform(0, 1.1)
-    
-        success = False
-        if (r < mutation_rate):  # Mutate.
-            while(not success):
-                row1 = random.randint(0, 8)
-                row2 = random.randint(0, 8)
-                row2 = row1
-                
-                from_column = random.randint(0, 8)
-                to_column = random.randint(0, 8)
-                while(from_column == to_column):
-                    from_column = random.randint(0, 8)
-                    to_column = random.randint(0, 8)   
-
-                # Check if the two places are free...
-                if(given.values[row1][from_column] == 0 and given.values[row1][to_column] == 0):
-                    # ...and that we are not causing a duplicate in the rows' columns.
-                    if(not given.is_column_duplicate(to_column, self.values[row1][from_column])
-                       and not given.is_column_duplicate(from_column, self.values[row2][to_column])
-                       and not given.is_block_duplicate(row2, to_column, self.values[row1][from_column])
-                       and not given.is_block_duplicate(row1, from_column, self.values[row2][to_column])):
-                    
-                        # Swap values.
-                        temp = self.values[row2][to_column]
-                        self.values[row2][to_column] = self.values[row1][from_column]
-                        self.values[row1][from_column] = temp
-                        success = True
-    
-        return success
-
-
-class Given(Candidate):
-    """ The grid containing the given/known values. """
-
-    def __init__(self, values):
-        self.values = values
-        return
-        
-    def is_row_duplicate(self, row, value):
-        """ Check whether there is a duplicate of a fixed/given value in a row. """
-        for column in range(0, Nd):
-            if(self.values[row][column] == value):
-               return True
-        return False
-
-    def is_column_duplicate(self, column, value):
-        """ Check whether there is a duplicate of a fixed/given value in a column. """
-        for row in range(0, Nd):
-            if(self.values[row][column] == value):
-               return True
-        return False
-
-    def is_block_duplicate(self, row, column, value):
-        """ Check whether there is a duplicate of a fixed/given value in a 3 x 3 block. """
-        i = 3*(int(row/3))
-        j = 3*(int(column/3))
-
-        if((self.values[i][j] == value)
-           or (self.values[i][j+1] == value)
-           or (self.values[i][j+2] == value)
-           or (self.values[i+1][j] == value)
-           or (self.values[i+1][j+1] == value)
-           or (self.values[i+1][j+2] == value)
-           or (self.values[i+2][j] == value)
-           or (self.values[i+2][j+1] == value)
-           or (self.values[i+2][j+2] == value)):
-            return True
-        else:
-            return False
-
-
-class Tournament(object):
-    """ The crossover function requires two parents to be selected from the population pool. The Tournament class is used to do this.
-    
-    Two individuals are selected from the population pool and a random number in [0, 1] is chosen. If this number is less than the 'selection rate' (e.g. 0.85), then the fitter individual is selected; otherwise, the weaker one is selected.
+    Parameters:
+        - problem_grid (list)
+        - i (int): Sub-grid's index.
+        - j (int): Sub-grid's element index.
+        - N (int)
+        - itself (bool) (optional=True): Indicates whether to yield the input indexes or not.
     """
 
-    def __init__(self):
-        return
-        
-    def compete(self, candidates):
-        """ Pick 2 random candidates from the population and get them to compete against each other. """
-        c1 = candidates[random.randint(0, len(candidates)-1)]
-        c2 = candidates[random.randint(0, len(candidates)-1)]
-        f1 = c1.fitness
-        f2 = c2.fitness
+    sub_grid_column = i % N
+    cell_column = j % N
 
-        # Find the fittest and the weakest.
-        if(f1 > f2):
-            fittest = c1
-            weakest = c2
-        else:
-            fittest = c2
-            weakest = c1
+    for a in range(sub_grid_column, len(problem_grid), N):
+        for b in range(cell_column, len(problem_grid), N):
+            if (a, b) == (i, j) and not itself:
+                continue
 
-        selection_rate = 0.85
-        r = random.uniform(0, 1.1)
-        while(r > 1):  # Outside [0, 1] boundary. Choose another.
-            r = random.uniform(0, 1.1)
-        if(r < selection_rate):
-            return fittest
-        else:
-            return weakest
-    
-class CycleCrossover(object):
-    """ Crossover relates to the analogy of genes within each parent candidate mixing together in the hopes of creating a fitter child candidate. Cycle crossover is used here (see e.g. A. E. Eiben, J. E. Smith. Introduction to Evolutionary Computing. Springer, 2007). """
-
-    def __init__(self):
-        return
-    
-    def crossover(self, parent1, parent2, crossover_rate):
-        """ Create two new child candidates by crossing over parent genes. """
-        child1 = Candidate()
-        child2 = Candidate()
-        
-        # Make a copy of the parent genes.
-        child1.values = numpy.copy(parent1.values)
-        child2.values = numpy.copy(parent2.values)
-
-        r = random.uniform(0, 1.1)
-        while(r > 1):  # Outside [0, 1] boundary. Choose another.
-            r = random.uniform(0, 1.1)
-            
-        # Perform crossover.
-        if (r < crossover_rate):
-            # Pick a crossover point. Crossover must have at least 1 row (and at most Nd-1) rows.
-            crossover_point1 = random.randint(0, 8)
-            crossover_point2 = random.randint(1, 9)
-            while(crossover_point1 == crossover_point2):
-                crossover_point1 = random.randint(0, 8)
-                crossover_point2 = random.randint(1, 9)
-                
-            if(crossover_point1 > crossover_point2):
-                temp = crossover_point1
-                crossover_point1 = crossover_point2
-                crossover_point2 = temp
-                
-            for i in range(crossover_point1, crossover_point2):
-                child1.values[i], child2.values[i] = self.crossover_rows(child1.values[i], child2.values[i])
-
-        return child1, child2
-
-    def crossover_rows(self, row1, row2): 
-        child_row1 = numpy.zeros(Nd)
-        child_row2 = numpy.zeros(Nd)
-
-        remaining = range(1, Nd+1)
-        cycle = 0
-        
-        while((0 in child_row1) and (0 in child_row2)):  # While child rows not complete...
-            if(cycle % 2 == 0):  # Even cycles.
-                # Assign next unused value.
-                index = self.find_unused(row1, remaining)
-                start = row1[index]
-                remaining.remove(row1[index])
-                child_row1[index] = row1[index]
-                child_row2[index] = row2[index]
-                next = row2[index]
-                
-                while(next != start):  # While cycle not done...
-                    index = self.find_value(row1, next)
-                    child_row1[index] = row1[index]
-                    remaining.remove(row1[index])
-                    child_row2[index] = row2[index]
-                    next = row2[index]
-
-                cycle += 1
-
-            else:  # Odd cycle - flip values.
-                index = self.find_unused(row1, remaining)
-                start = row1[index]
-                remaining.remove(row1[index])
-                child_row1[index] = row2[index]
-                child_row2[index] = row1[index]
-                next = row2[index]
-                
-                while(next != start):  # While cycle not done...
-                    index = self.find_value(row1, next)
-                    child_row1[index] = row2[index]
-                    remaining.remove(row1[index])
-                    child_row2[index] = row1[index]
-                    next = row2[index]
-                    
-                cycle += 1
-            
-        return child_row1, child_row2  
-           
-    def find_unused(self, parent_row, remaining):
-        for i in range(0, len(parent_row)):
-            if(parent_row[i] in remaining):
-                return i
-
-    def find_value(self, parent_row, value):
-        for i in range(0, len(parent_row)):
-            if(parent_row[i] == value):
-                return i
+            yield (a, b)
 
 
-class Sudoku(object):
-    """ Solves a given Sudoku puzzle using a genetic algorithm. """
+def same_row_indexes(problem_grid, i, j, N, itself=True):
+    """
+    A generator function that yields indexes of the elements that are in the same row as the input indexes.
 
-    def __init__(self):
-        self.given = None
-        return
-    
-    def load(self, path):
-        # Load a configuration to solve.
-        with open(path, "r") as f:
-            values = numpy.loadtxt(f).reshape((Nd, Nd)).astype(int)
-            self.given = Given(values)
-        return
+    Parameters:
+        - problem_grid (list)
+        - i (int): Sub-grid's index.
+        - j (int): Sub-grid's element index.
+        - N (int)
+        - itself (bool) (optional=True): Indicates whether to yield the input indexes or not.
+    """
 
-    def save(self, path, solution):
-        # Save a configuration to a file.
-        with open(path, "w") as f:
-            numpy.savetxt(f, solution.values.reshape(Nd*Nd), fmt='%d')
-        return
-        
-    def solve(self):
-        Nc = 1000  # Number of candidates (i.e. population size).
-        Ne = int(0.05*Nc)  # Number of elites.
-        Ng = 1000  # Number of generations.
-        Nm = 0  # Number of mutations.
-        
-        # Mutation parameters.
-        phi = 0
-        sigma = 1
-        mutation_rate = 0.06
-    
-        # Create an initial population.
-        self.population = Population()
-        self.population.seed(Nc, self.given)
-    
-        # For up to 10000 generations...
-        stale = 0
-        for generation in range(0, Ng):
-        
-            print("Generation %d" % generation)
-            
-            # Check for a solution.
-            best_fitness = 0.0
-            for c in range(0, Nc):
-                fitness = self.population.candidates[c].fitness
-                if(fitness == 1):
-                    print("Solution found at generation %d!" % generation)
-                    print(self.population.candidates[c].values)
-                    return self.population.candidates[c]
+    sub_grid_row = int(i / N)
+    cell_row = int(j / N)
 
-                # Find the best fitness.
-                if(fitness > best_fitness):
-                    best_fitness = fitness
+    for a in range(sub_grid_row * N, sub_grid_row * N + N):
+        for b in range(cell_row * N, cell_row * N + N):
+            if (a, b) == (i, j) and not itself:
+                continue
 
-            print("Best fitness: %f" % best_fitness)
+            yield (a, b)
 
-            # Create the next population.
-            next_population = []
 
-            # Select elites (the fittest candidates) and preserve them for the next generation.
-            self.population.sort()
-            elites = []
-            for e in range(0, Ne):
-                elite = Candidate()
-                elite.values = numpy.copy(self.population.candidates[e].values)
-                elites.append(elite)
+def get_cells_from_indexes(grid, indexes):
+    """
+    A generator function that yields the values of a list of grid indexes.
 
-            # Create the rest of the candidates.
-            for count in range(Ne, Nc, 2):
-                # Select parents from population via a tournament.
-                t = Tournament()
-                parent1 = t.compete(self.population.candidates)
-                parent2 = t.compete(self.population.candidates)
-                
-                ## Cross-over.
-                cc = CycleCrossover()
-                child1, child2 = cc.crossover(parent1, parent2, crossover_rate=1.0)
-                
-                # Mutate child1.
-                old_fitness = child1.fitness
-                success = child1.mutate(mutation_rate, self.given)
-                child1.update_fitness()
-                if(success):
-                    Nm += 1
-                    if(child1.fitness > old_fitness):  # Used to calculate the relative success rate of mutations.
-                        phi = phi + 1
-                
-                # Mutate child2.
-                old_fitness = child2.fitness
-                success = child2.mutate(mutation_rate, self.given)
-                child2.update_fitness()
-                if(success):
-                    Nm += 1
-                    if(child2.fitness > old_fitness):  # Used to calculate the relative success rate of mutations.
-                        phi = phi + 1
-                
-                # Add children to new population.
-                next_population.append(child1)
-                next_population.append(child2)
+    Parameters:
+        - grid (list)
+        - indexes (list) : e.g. [[1, 2], [3, 10]]
 
-            # Append elites onto the end of the population. These will not have been affected by crossover or mutation.
-            for e in range(0, Ne):
-                next_population.append(elites[e])
-                
-            # Select next generation.
-            self.population.candidates = next_population
-            self.population.update_fitness()
-            
-            # Calculate new adaptive mutation rate (based on Rechenberg's 1/5 success rule). This is to stop too much mutation as the fitness progresses towards unity.
-            if(Nm == 0):
-                phi = 0  # Avoid divide by zero.
-            else:
-                phi = phi / Nm
-            
-            if(phi > 0.2):
-                sigma = sigma/0.998
-            elif(phi < 0.2):
-                sigma = sigma*0.998
+    Returns (list): e.g. [3, 4, 5]
+    """
 
-            mutation_rate = abs(numpy.random.normal(loc=0.0, scale=sigma, size=None))
-            Nm = 0
-            phi = 0
+    for a, b in indexes:
+        yield grid[a][b]
 
-            # Check for stale population.
-            self.population.sort()
-            if(self.population.candidates[0].fitness != self.population.candidates[1].fitness):
-                stale = 0
-            else:
-                stale += 1
 
-            # Re-seed the population if 100 generations have passed with the fittest two candidates always having the same fitness.
-            if(stale >= 100):
-                print("The population has gone stale. Re-seeding...")
-                self.population.seed(Nc, self.given)
-                stale = 0
-                sigma = 1
-                phi = 0
-                Nm = 0
-                mutation_rate = 0.06
-        
-        print("No solution found.")
-        return None
-        
-s = Sudoku()
-s.load("puzzle_mild.txt")
-solution = s.solve()
-if(solution):
-    s.save("solution.txt", solution)
+def solve(problem_grid, population_size=1000, selection_rate=0.5, max_generations_count=1000, mutation_rate=0.05):
+    """
+    Solves a Sudoku puzzle using genetic algorithm.
+    Assumes that the parameters are all valid.
+
+    Parameters:
+        - problem_grid (list): An N*N sudoku grid. See the paper ("encoding" section) to understand it's format.
+        - population_size (int): The initial population size.
+        - selection_rate (int)
+        - max_generations_count (int)
+        - mutation_rate (int)
+
+    Raises:
+            - Exception: The puzzle is not solvable.
+    """
+
+    # square root of the problem grid's size
+    N = int(sqrt(len(problem_grid)))
+
+    def empty_grid(elem_generator=None):
+        """
+        Returns an empty Sudoku grid.
+
+        Parameters:
+            - elem_generator (function) (optional=None): Is is used to generate initial values of the grid's elements.
+              If it's not given, all grid's elements will be "None".
+        """
+
+        return [
+            [
+                (None if elem_generator is None else elem_generator(i, j))
+                for j in range(len(problem_grid))
+            ] for i in range(len(problem_grid))
+        ]
+
+    def deep_copy_grid(grid):
+        """
+        Returns a deep copy of the grid argument.
+
+        Parameters:
+            - grid (list)
+        """
+
+        return empty_grid(lambda i, j: grid[i][j])
+
+    # this is done to avoid changes in the input argument
+    problem_grid = deep_copy_grid(problem_grid)
+
+    def same_sub_grid_indexes(i, j, itself=True):
+        """
+        A generator function that yields indexes of the elements that are in the same sub-grid as the input indexes.
+
+        Parameters:
+            - i (int): Sub-grid's index.
+            - j (int): Sub-grid's element index.
+            - itself (bool) (optional=True): Indicates whether to yield the input indexes or not.
+        """
+
+        for k in range(len(problem_grid)):
+            if k == j and not itself:
+                continue
+
+            yield (i, k)
+
+    def fill_predetermined_cells():
+        """
+        Fills some predetermined cells of the Sudoku grid using a pencil marking method.
+        See the paper for more details.
+
+        Raises:
+            - Exception: The puzzle is not solvable.
+        """
+
+        # TODO: Implement the hidden cell finder.
+
+        track_grid = empty_grid(lambda *args: [val for val in range(1, len(problem_grid) + 1)])
+
+        def pencil_mark(i, j):
+            """
+            Marks the value of grid[i][j] element in it's row, column and sub-grid.
+
+            Parameters:
+                - i (int): Sub-grid's index.
+                - j (int): Sub-grid's element index.
+
+            Returns: The more completed version of the grid.
+            """
+
+            # remove from same sub-grid cells
+            for a, b in same_sub_grid_indexes(i, j, itself=False):
+                try:
+                    track_grid[a][b].remove(problem_grid[i][j])
+                except (ValueError, AttributeError) as e:
+                    pass
+
+            # remove from same row cells
+            for a, b in same_row_indexes(problem_grid, i, j, N, itself=False):
+                try:
+                    track_grid[a][b].remove(problem_grid[i][j])
+                except (ValueError, AttributeError) as e:
+                    pass
+
+            # remove from same column cells
+            for a, b in same_column_indexes(problem_grid, i, j, N, itself=False):
+                try:
+                    track_grid[a][b].remove(problem_grid[i][j])
+                except (ValueError, AttributeError) as e:
+                    pass
+
+        for i in range(len(problem_grid)):
+            for j in range(len(problem_grid)):
+                if problem_grid[i][j] is not None:
+                    pencil_mark(i, j)
+
+        while True:
+            anything_changed = False
+
+            for i in range(len(problem_grid)):
+                for j in range(len(problem_grid)):
+                    if track_grid[i][j] is None:
+                        continue
+
+                    if len(track_grid[i][j]) == 0:
+                        raise Exception('The puzzle is not solvable.')
+                    elif len(track_grid[i][j]) == 1:
+                        problem_grid[i][j] = track_grid[i][j][0]
+                        pencil_mark(i, j)
+
+                        track_grid[i][j] = None
+
+                        anything_changed = True
+
+            if not anything_changed:
+                break
+
+        return problem_grid
+
+    def generate_initial_population():
+        """
+        Generates an initial population of size "population_size".
+
+        Returns (list): An array of candidate grids.
+        """
+
+        candidates = []
+        for k in range(population_size):
+            candidate = empty_grid()
+            for i in range(len(problem_grid)):
+                shuffled_sub_grid = [n for n in range(1, len(problem_grid) + 1)]
+                shuffle(shuffled_sub_grid)
+
+                for j in range(len(problem_grid)):
+                    if problem_grid[i][j] is not None:
+                        candidate[i][j] = problem_grid[i][j]
+
+                        shuffled_sub_grid.remove(problem_grid[i][j])
+
+                for j in range(len(problem_grid)):
+                    if candidate[i][j] is None:
+                        candidate[i][j] = shuffled_sub_grid.pop()
+
+            candidates.append(candidate)
+
+        return candidates
+
+    def fitness(grid):
+        """
+        Calculates the fitness function for a grid.
+
+        Parameters:
+            - grid (list)
+
+        Returns (int): The value of the fitness function for the input grid.
+        """
+
+        row_duplicates_count = 0
+
+        # calculate rows duplicates
+        for a, b in same_column_indexes(problem_grid, 0, 0, N):
+            row = list(get_cells_from_indexes(grid, same_row_indexes(problem_grid, a, b, N)))
+
+            row_duplicates_count += len(row) - len(set(row))
+
+        return row_duplicates_count
+
+    def selection(candidates):
+        """
+        Returns the best portion ("selection_rate") of candidates based on their fitness function values (lower ones).
+
+        Parameters:
+            - candidates (list)
+
+        Returns (list)
+        """
+
+        # TODO: Probabilistically selection.
+
+        index_fitness = []
+        for i in range(len(candidates)):
+            index_fitness.append(tuple([i, fitness(candidates[i])]))
+
+        index_fitness.sort(key=lambda elem: elem[1])
+
+        selected_part = index_fitness[0: int(len(index_fitness) * selection_rate)]
+        indexes = [e[0] for e in selected_part]
+
+        return [candidates[i] for i in indexes], selected_part[0][1]
+
+    fill_predetermined_cells()
+
+    population = generate_initial_population()
+    best_fitness = None
+
+    for i in range(max_generations_count):
+        population, best_fitness = selection(population)
+
+        if i == max_generations_count - 1 or fitness(population[0]) == 0:
+            break
+
+        shuffle(population)
+        new_population = []
+
+        while True:
+            solution_1, solution_2 = None, None
+
+            try:
+                solution_1 = population.pop()
+            except IndexError:
+                break
+
+            try:
+                solution_2 = population.pop()
+            except IndexError:
+                new_population.append(solution_2)
+                break
+
+            cross_point = randint(0, len(problem_grid) - 2)
+
+            temp_sub_grid = solution_1[cross_point]
+            solution_1[cross_point] = solution_2[cross_point + 1]
+            solution_2[cross_point + 1] = temp_sub_grid
+
+            new_population.append(solution_1)
+            new_population.append(solution_2)
+
+        # mutation
+        for candidate in new_population[0:int(len(new_population) * mutation_rate)]:
+            random_sub_grid = randint(0, 8)
+            possible_swaps = []
+            for grid_element_index in range(len(problem_grid)):
+                if problem_grid[random_sub_grid][grid_element_index] is None:
+                    possible_swaps.append(grid_element_index)
+            if len(possible_swaps) > 1:
+                shuffle(possible_swaps)
+                first_index = possible_swaps.pop()
+                second_index = possible_swaps.pop()
+                tmp = candidate[random_sub_grid][first_index]
+                candidate[random_sub_grid][first_index] = candidate[random_sub_grid][second_index]
+                candidate[random_sub_grid][second_index] = tmp
+
+        population.extend(new_population)
+
+    return population[0], best_fitness
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("file", help="Input file that contains Sudoku's problem.")
+    parser.add_argument("-o", "--output-file", help="Output file to store problem's solution.",
+                        type=str, default=None)
+    parser.add_argument("-p", "--population-size", type=int, default=10000)
+    parser.add_argument("-s", "--selection-rate", type=float, default=0.5)
+    parser.add_argument("-m", "--max-generations-count", type=int, default=1000)
+    parser.add_argument("-u", "--mutation-rate", type=float, default=0.05)
+    parser.add_argument("-q", "--quiet", action="store_true")
+    args = parser.parse_args()
+
+    try:
+        with open(args.file, "r") as input_file:
+            file_content = input_file.read()
+            file_lines = file_content.split('\n')
+            problem_grid = [[] for i in range(len(file_lines))]
+            sqrt_n = int(sqrt(len(file_lines)))
+            for j in range(len(file_lines)):
+                line_values = [(int(value) if value != '-' else None) for value in file_lines[j].split(' ')]
+                for i in range(len(line_values)):
+                    problem_grid[
+                        int(i / sqrt_n) +
+                        int(j / sqrt_n) * sqrt_n
+                        ].append(line_values[i])
+            try:
+                solution, best_fitness = solve(
+                    problem_grid,
+                    population_size=args.population_size,
+                    selection_rate=args.selection_rate,
+                    max_generations_count=args.max_generations_count,
+                    mutation_rate=args.mutation_rate
+                )
+                output_str = "Best fitness value: " + str(best_fitness) + '\n\n'
+                for a, b in same_column_indexes(solution, 0, 0, sqrt_n):
+                    row = list(get_cells_from_indexes(solution, same_row_indexes(solution, a, b, sqrt_n)))
+
+                    output_str += " ".join([str(elem) for elem in row]) + '\n'
+                output_str = output_str
+
+                if args.output_file:
+                    with open(args.output_file, "w") as output_file:
+                        output_file.write(output_str)
+
+                if not args.quiet:
+                    print(output_str[:-1])
+
+            except:
+                exit('Input problem is not solvable.')
+    except FileNotFoundError:
+        exit("Input file not found.")
